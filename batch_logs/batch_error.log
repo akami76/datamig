@@ -1,0 +1,4 @@
+INFO:root:Batch f79f56ec-ced1-4ad7-9540-85afadf151be started at 2024-11-05 17:14:33 with 4 total rows.
+ERROR:batch_error:Batch ID f79f56ec-ced1-4ad7-9540-85afadf151be 실패: 
+INFO:root:Batch 7c592a67-7044-4638-8171-35d822684a61 started at 2024-11-05 17:15:00 with 4 total rows.
+ERROR:batch_error:Batch ID 7c592a67-7044-4638-8171-35d822684a61 실패: 

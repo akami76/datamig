@@ -1,0 +1,10 @@
+{
+  "databases": {
+    "mysql_db": {
+      "uri": "mysql+pymysql://akami:1qaz2wsx@127.0.0.1:9306/stockdb"
+    },
+    "oracle_db": {
+      "uri": "oracle+cx_oracle://akami:1qaz2wsx@127.0.0.1:1521/stockdb"
+    }
+  }
+}

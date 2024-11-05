@@ -1,0 +1,1 @@
+{"task_id": "task_001", "batch_start_time": "2024-11-05 05:43:37", "batch_end_time": "2024-11-05 05:43:53", "processed_records": 3, "conversion_success_count": 0, "conversion_failure_count": 3, "conversion_errors": [{"record_id": 1, "error": "500: Conversion failed: "}, {"record_id": 2, "error": "500: Conversion failed: "}, {"record_id": 3, "error": "500: Conversion failed: "}]}

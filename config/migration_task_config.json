@@ -1,0 +1,7 @@
+{
+  "task_id": "task_001",
+  "source_system": "system1",
+  "table_name": "sample_table",
+  "query": "SELECT id, column_name FROM sample_table WHERE column_name IS NOT NULL",
+  "batch_size": 100
+}
