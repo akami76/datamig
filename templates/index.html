@@ -10,6 +10,9 @@
             background-color: #000;
             color: #fff;
         }
+        #queryInput {
+            flex: 1;
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -39,7 +42,7 @@
         <div class="card-body">
             <form id="sample-query-form" class="d-flex align-items-center mb-3">
                 <label for="queryInput" class="form-label me-2">쿼리 입력:</label>
-                <input type="text" id="queryInput" class="form-control me-2" style="width: auto;" placeholder="SELECT column_name FROM table_name LIMIT 1">
+                <input type="text" id="queryInput" class="form-control me-2" placeholder="SELECT column_name FROM table_name LIMIT 1">
                 <button type="button" id="convertTestBtn" class="btn btn-secondary me-2" onclick="runSampleQuery()">변환테스트</button>
                 <button type="button" id="cryptohubBtn" class="btn btn-warning" onclick="convertWithCryptoHub()">Cryptohub 변환</button>
                 <div id="queryResult" class="d-flex align-items-center"></div>
