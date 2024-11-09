@@ -1,5 +1,8 @@
 {
   "databases": {
+    "고객통합플랫폼DB": {
+      "uri": "postgresql+psycopg2://postgres:1qaz2wsx@127.0.0.1:5432/akamidb"
+    },
     "mysql_db": {
       "uri": "mysql+pymysql://akami:1qaz2wsx@127.0.0.1:9306/stockdb"
     },
