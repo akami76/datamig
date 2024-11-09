@@ -13,12 +13,41 @@ CREATE TABLE IF NOT EXISTS migration_results (
     id INT AUTO_INCREMENT PRIMARY KEY,
     damo VARCHAR(1000),
     crytohub VARCHAR(1000),
-    result VARCHAR(1000),
-    datacryto VARCHAR(1000),       -- 변환된 데이터를 저장할 컬럼
     rsltCd VARCHAR(50),             -- 변환 결과 코드
     rsltMsg VARCHAR(255),           -- 변환 결과 메시지
     last_update_ts DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+---oracle-------
+
+-- 시퀀스 생성
+CREATE SEQUENCE migration_results_seq
+START WITH 1
+INCREMENT BY 1
+NOCACHE;
+
+-- 테이블 생성
+CREATE TABLE migration_results (
+    id NUMBER PRIMARY KEY,
+    damo VARCHAR2(1000),
+    crytohub VARCHAR2(1000),
+    rsltCd VARCHAR2(50),         -- 변환 결과 코드
+    rsltMsg VARCHAR2(255),       -- 변환 결과 메시지
+    last_update_ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 자동 증가를 위한 트리거 생성
+CREATE OR REPLACE TRIGGER migration_results_trigger
+BEFORE INSERT ON migration_results
+FOR EACH ROW
+BEGIN
+    IF :NEW.id IS NULL THEN
+        SELECT migration_results_seq.NEXTVAL INTO :NEW.id FROM DUAL;
+    END IF;
+END;
+/
+
+
 
 
 docker-compose.yml
