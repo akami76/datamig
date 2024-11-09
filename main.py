@@ -254,28 +254,30 @@ def get_db_type(selected_db):
 async def process_batch(selected_db, query, batch_id, total_rows):
     db_type = get_db_type(selected_db)
     batch_size = 100  # 한 번에 처리할 데이터의 수
-    offset = 0
+    last_processed_id = 0  # 마지막으로 처리된 ID 초기화
     processed_rows = 0
 
     try:
         while processed_rows < total_rows:
-            # 세션을 루프 내에서 명확히 열고 닫음
+            # 세션을 루프 내에서 명확히 열어 처리
             session = DBConnectionManager.get_session(selected_db)
 
+            # ID 기반 페이징 쿼리 구성
             if db_type == "oracle":
                 paginated_query = f"""
                 SELECT * FROM (
-                    SELECT inner_query.*, ROWNUM rnum FROM (
-                        {query}
-                    ) inner_query WHERE ROWNUM <= {offset + batch_size}
-                )
-                WHERE rnum > {offset}
+                    {query}
+                ) WHERE ROWNUM > {last_processed_id} AND ROWNUM <= {last_processed_id + batch_size}
+                ORDER BY id
                 """
             else:
                 paginated_query = f"""
                 SELECT * FROM (
                     {query}
-                ) AS subquery LIMIT {batch_size} OFFSET {offset}
+                ) AS subquery
+                WHERE id > {last_processed_id}
+                ORDER BY id
+                LIMIT {batch_size}
                 """
 
             try:
@@ -305,9 +307,9 @@ async def process_batch(selected_db, query, batch_id, total_rows):
                         }
                     )
 
-                session.commit()  # 커밋 후 세션 닫기
+                session.commit()
+                last_processed_id = result[-1][0]  # 마지막 처리된 ID 갱신
                 processed_rows += len(result)
-                offset += batch_size
 
                 # 로그 및 상태 업데이트
                 update_batch_status(batch_id, processed_rows, total_rows)
@@ -318,7 +320,7 @@ async def process_batch(selected_db, query, batch_id, total_rows):
                 session.rollback()  # 오류 발생 시 롤백
                 raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
             finally:
-                session.close()  # 반드시 세션 닫기
+                session.close()  # 명확히 세션 닫기
 
         if processed_rows < total_rows:
             update_batch_status(batch_id, processed_rows, total_rows, 'incomplete')
@@ -335,5 +337,3 @@ async def process_batch(selected_db, query, batch_id, total_rows):
     finally:
         if 'session' in locals() and session:
             session.close()  # 모든 경우에 세션 닫기 보장
-
-
