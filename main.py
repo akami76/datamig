@@ -251,16 +251,15 @@ def get_db_type(selected_db):
 
 # 백그라운드 배치 작업 실행
 async def process_batch(selected_db, query, batch_id, total_rows):
-    session = DBConnectionManager.get_session(selected_db)
     db_type = get_db_type(selected_db)
-    batch_size = 10  # 한 번에 처리할 데이터의 수
-    sleep_time = 1
+    batch_size = 100  # 한 번에 처리할 데이터의 수
     offset = 0
     processed_rows = 0
 
     try:
         while processed_rows < total_rows:
-            time.sleep(sleep_time)
+            # 새 세션을 각 배치 루프에서 열어 처리합니다.
+            session = DBConnectionManager.get_session(selected_db)
 
             if db_type == "oracle":
                 paginated_query = f"""
@@ -277,7 +276,9 @@ async def process_batch(selected_db, query, batch_id, total_rows):
                     {query}
                 ) AS subquery LIMIT {batch_size} OFFSET {offset}
                 """
+
             result = session.execute(text(paginated_query)).fetchall()
+            session.commit()
 
             if not result:
                 break
@@ -287,10 +288,10 @@ async def process_batch(selected_db, query, batch_id, total_rows):
             results = response["ScpDbAgentApiVo"]
 
             update_query = text("""
-                            UPDATE migration_results 
-                            SET cryptohub = :outStr, rsltCd = :rsltCd, rsltMsg = :rsltMsg 
-                            WHERE damo = :inStr
-                            """)
+                UPDATE migration_results 
+                SET cryptohub = :outStr, rsltCd = :rsltCd, rsltMsg = :rsltMsg 
+                WHERE damo = :inStr
+            """)
 
             for i, row in enumerate(result):
                 result_data = results[i]
@@ -305,13 +306,16 @@ async def process_batch(selected_db, query, batch_id, total_rows):
                 )
 
             session.commit()
+            session.close()  # 세션을 명시적으로 닫아줌
+
             processed_rows += len(result)
             offset += batch_size
-            print(f"Batch {batch_id} - Processed {processed_rows} rows out of {total_rows}")
 
+            # 주기적으로 로그를 남기고 상태를 업데이트합니다.
             update_batch_status(batch_id, processed_rows, total_rows)
-            if processed_rows % batch_size == 0:
-                batch_storage.log(batch_id, f"Processed {processed_rows} rows.")
+            batch_storage.log(batch_id, f"Processed {processed_rows} rows out of {total_rows}")
+
+            print(f"Batch {batch_id} - Processed {processed_rows}/{total_rows} rows")
 
         if processed_rows < total_rows:
             update_batch_status(batch_id, processed_rows, total_rows, 'incomplete')
@@ -323,6 +327,10 @@ async def process_batch(selected_db, query, batch_id, total_rows):
     except Exception as e:
         update_batch_status(batch_id, processed_rows, total_rows, 'failed')
         batch_storage.log(batch_id, f"Error: {str(e)}")
+        print(f"Error processing batch {batch_id}: {str(e)}")
+
     finally:
-        # scoped_session을 사용하면 별도로 세션을 닫지 않아도 됨
-        pass
+        # 세션을 닫지 않는 경우가 없도록 보장
+        if 'session' in locals():
+            session.close()
+
