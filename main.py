@@ -250,6 +250,7 @@ def get_db_type(selected_db):
         raise HTTPException(status_code=500, detail="지원되지 않는 데이터베이스 유형입니다.")
 
 # 백그라운드 배치 작업 실행
+# 백그라운드 배치 작업 실행
 async def process_batch(selected_db, query, batch_id, total_rows):
     db_type = get_db_type(selected_db)
     batch_size = 100  # 한 번에 처리할 데이터의 수
@@ -258,7 +259,7 @@ async def process_batch(selected_db, query, batch_id, total_rows):
 
     try:
         while processed_rows < total_rows:
-            # 새 세션을 각 배치 루프에서 열어 처리합니다.
+            # 세션을 루프 내에서 명확히 열고 닫음
             session = DBConnectionManager.get_session(selected_db)
 
             if db_type == "oracle":
@@ -277,45 +278,47 @@ async def process_batch(selected_db, query, batch_id, total_rows):
                 ) AS subquery LIMIT {batch_size} OFFSET {offset}
                 """
 
-            result = session.execute(text(paginated_query)).fetchall()
-            session.commit()
+            try:
+                result = session.execute(text(paginated_query)).fetchall()
+                if not result:
+                    break  # 데이터가 더 이상 없으면 루프 종료
 
-            if not result:
-                break
+                data_batch = [row[0] for row in result]
+                response = await convert_sample(RequestModel(instId="data-mig-server", ScpDbAgentApiVo=data_batch))
+                results = response["ScpDbAgentApiVo"]
 
-            data_batch = [row[0] for row in result]
-            response = await convert_sample(RequestModel(instId="data-mig-server", ScpDbAgentApiVo=data_batch))
-            results = response["ScpDbAgentApiVo"]
+                update_query = text("""
+                    UPDATE migration_results 
+                    SET cryptohub = :outStr, rsltCd = :rsltCd, rsltMsg = :rsltMsg 
+                    WHERE damo = :inStr
+                """)
 
-            update_query = text("""
-                UPDATE migration_results 
-                SET cryptohub = :outStr, rsltCd = :rsltCd, rsltMsg = :rsltMsg 
-                WHERE damo = :inStr
-            """)
+                for i, row in enumerate(result):
+                    result_data = results[i]
+                    session.execute(
+                        update_query,
+                        {
+                            "outStr": result_data.get("outStr"),
+                            "rsltCd": result_data.get("rsltCd"),
+                            "rsltMsg": result_data.get("rsltMsg"),
+                            "inStr": result_data.get("inStr")
+                        }
+                    )
 
-            for i, row in enumerate(result):
-                result_data = results[i]
-                session.execute(
-                    update_query,
-                    {
-                        "outStr": result_data.get("outStr"),
-                        "rsltCd": result_data.get("rsltCd"),
-                        "rsltMsg": result_data.get("rsltMsg"),
-                        "inStr": result_data.get("inStr")
-                    }
-                )
+                session.commit()  # 커밋 후 세션 닫기
+                processed_rows += len(result)
+                offset += batch_size
 
-            session.commit()
-            session.close()  # 세션을 명시적으로 닫아줌
+                # 로그 및 상태 업데이트
+                update_batch_status(batch_id, processed_rows, total_rows)
+                batch_storage.log(batch_id, f"Processed {processed_rows}/{total_rows} rows")
+                print(f"Batch {batch_id} - Processed {processed_rows}/{total_rows} rows")
 
-            processed_rows += len(result)
-            offset += batch_size
-
-            # 주기적으로 로그를 남기고 상태를 업데이트합니다.
-            update_batch_status(batch_id, processed_rows, total_rows)
-            batch_storage.log(batch_id, f"Processed {processed_rows} rows out of {total_rows}")
-
-            print(f"Batch {batch_id} - Processed {processed_rows}/{total_rows} rows")
+            except SQLAlchemyError as e:
+                session.rollback()  # 오류 발생 시 롤백
+                raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+            finally:
+                session.close()  # 반드시 세션 닫기
 
         if processed_rows < total_rows:
             update_batch_status(batch_id, processed_rows, total_rows, 'incomplete')
@@ -330,7 +333,7 @@ async def process_batch(selected_db, query, batch_id, total_rows):
         print(f"Error processing batch {batch_id}: {str(e)}")
 
     finally:
-        # 세션을 닫지 않는 경우가 없도록 보장
-        if 'session' in locals():
-            session.close()
+        if 'session' in locals() and session:
+            session.close()  # 모든 경우에 세션 닫기 보장
+
 
