@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xchanger - Data Migration Tool</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="./images/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="./images/favicon-16x16.png">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .card-header {
+      background-color: #000;
+      color: #fff;
+    }
+    #queryInput {
+      flex: 1;
+    }
+    .extra-small-font {
+      font-size: 0.7rem;
+    }
+    /* 새롭게 추가할 스타일 */
+    body {
+      font-size: 0.85rem /* 기준 폰트 크기를 조정 */
+    }
+  </style>
+</head>
+<body class="bg-light" onload="loadBatchIdFromCookie()">
+<div class="container mt-5">
+  <h2 class="text-center mb-4 text-primary">X-Changer(for Data Migration)</h2>
+
+  <!-- 1. DB 연결정보 선택 -->
+  <div class="card mb-4">
+    <div class="card-header">1. DB 연결정보 선택</div>
+    <div class="card-body">
+      <form id="db-connect-form" class="d-flex align-items-center">
+        <label for="dbSelection" class="form-label me-2">시스템 선택:</label>
+        <select class="form-select me-2" id="dbSelection" style="width: auto;">
+          {% for db in db_options %}
+          <option value="{{ db }}">{{ db }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" id="connectBtn" class="btn btn-primary me-2" onclick="testConnection()">연결 테스트</button>
+        <div id="connectionResult" class="d-flex align-items-center"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. 샘플데이터 전환하기 -->
+  <div class="card mb-4">
+    <div class="card-header">2. 샘플데이터 전환하기</div>
+    <div class="card-body">
+      <form id="sample-query-form" class="d-flex align-items-center mb-3">
+        <label for="queryInput" class="form-label me-2">쿼리 입력:</label>
+        <input type="text" id="queryInput" class="form-control me-2" placeholder="select damo from migration_results where cryptohub is null" value="select damo from migration_results where cryptohub is null">
+        <button type="button" id="convertTestBtn" class="btn btn-secondary me-2" onclick="runSampleQuery()">샘플조회</button>
+        <div id="queryResult" class="d-flex align-items-center"></div>
+        <button type="button" id="cryptohubBtn" class="btn btn-warning" onclick="convertWithCryptoHub()">Cryptohub 변환 테스트</button>
+      </form>
+      <table class="table table-bordered">
+        <thead>
+        <tr>
+          <th>No</th>
+          <th>Sample Data</th>
+          <th>Result Code (rsltCd)</th>
+          <th>Converted Data (outStr)</th>
+        </tr>
+        </thead>
+        <tbody id="sampleResultsTable">
+        <!-- 샘플 결과가 여기에 추가됩니다 -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 3. 테스트 변환 수행 -->
+  <div class="card mb-4">
+    <div class="card-header">3. 테스트 변환 수행</div>
+    <div class="card-body">
+      <button type="button" id="startBatchBtn" class="btn btn-success mb-3" onclick="startBatchTask()">배치 작업 시작</button>
+
+    </div>
+  </div>
+
+  <!-- 배치 작업 상태 조회 -->
+  <div class="card mb-4">
+    <div class="card-header">4. 배치 작업 상태 조회</div>
+    <div class="card-body">
+      <form id="batch-status-form" class="d-flex align-items-center mb-3">
+        <label for="batchId" class="form-label me-2">Batch ID:</label>
+        <input type="text" id="batchId" class="form-control me-2" style="width: auto;" placeholder="Enter Batch ID">
+        <button type="button" class="btn btn-info me-2" onclick="startStatusMonitor()">상태 모니터링 시작</button>
+        <button type="button" class="btn btn-danger me-2" onclick="stopStatusMonitor()">상태 모니터링 종료</button>
+        <div id="batchStatusResult" ></div>
+      </form>
+      <div class="progress">
+        <div id="progressbar" class="progress-bar bg-danger" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+      </div>
+      <div id="batchLog" class="extra-small-font"></div>
+      <div id="errorLogPath" class="text-danger"></div>
+      <div id="errorLogContent" class="mt-3"></div>
+      <table class="table table-bordered">
+        <thead>
+        <tr>
+          <th>start_time</th>
+          <th>last_update_ts</th>
+          <th>status</th>
+          <th>total_rows</th>
+          <th>processed_rows</th>
+        </tr>
+        </thead>
+        <tbody id="batchResultsTable">
+        <!-- Batch results will be appended here -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script>
+  let monitorInterval;
+  let sampleDataList = [];
+  let isMonitor = false;
+
+  // DB 연결 테스트 함수
+  async function testConnection() {
+    const dbSelection = document.getElementById("dbSelection").value;
+    try {
+      const response = await axios.post("/test-connection", new URLSearchParams({selected_db: dbSelection}));
+      document.getElementById("connectionResult").innerHTML = `<span class="text-success me-2">&#x2705;</span><span>DB 연결 성공</span>`;
+    } catch (error) {
+      document.getElementById("connectionResult").innerHTML = `<span class="text-danger me-2">&#x26A0;</span><span>DB 연결 실패: ${error.response.data.detail}</span>`;
+    }
+  }
+
+  // 샘플 데이터 쿼리 실행
+  async function runSampleQuery() {
+    const dbSelection = document.getElementById("dbSelection").value;
+    const query = document.getElementById("queryInput").value;
+    try {
+      const response = await axios.post("/query-sample", new URLSearchParams({selected_db: dbSelection, query: query}));
+      document.getElementById("queryResult").innerHTML = `<span class="text-success me-2">&#x2705;</span><span>쿼리 성공</span>`;
+      sampleDataList = response.data.sample_data;
+      const sampleResultsTable = document.getElementById("sampleResultsTable");
+      sampleResultsTable.innerHTML = "";
+      sampleDataList.forEach((data, index) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td>${index + 1}</td><td>${data}</td><td id="rsltCd-${index}">-</td><td id="outStr-${index}">-</td>`;
+        sampleResultsTable.appendChild(row);
+      });
+    } catch (error) {
+      document.getElementById("queryResult").innerHTML = `<span class="text-danger me-2">&#x26A0;</span><span>쿼리 실패: ${error.response.data.detail}</span>`;
+    }
+  }
+
+  // Cryptohub 변환
+  async function convertWithCryptoHub() {
+    if (sampleDataList.length === 0) {
+      alert("먼저 샘플 데이터를 불러와 주세요.");
+      return;
+    }
+    //alert(sampleDataList)
+    try {
+      const payload = {
+        instId: 'server1',
+        ScpDbAgentApiVo: sampleDataList.slice(0, 10) // 배열을 직접 할당
+      };
+
+      //alert(JSON.stringify(payload))
+      console.log(JSON.stringify(payload))
+
+      const response = await axios.post("/convert-sample", payload);
+      const results = response.data.ScpDbAgentApiVo;
+      results.forEach((result, index) => {
+        document.getElementById(`rsltCd-${index}`).textContent = result.rsltCd;
+        document.getElementById(`outStr-${index}`).textContent = result.outStr;
+      });
+    } catch (error) {
+      alert("Cryptohub 변환 중 오류가 발생했습니다.\\n" + error);
+    }
+  }
+
+  // 배치 작업 시작 함수
+  async function startBatchTask() {
+    const dbSelection = document.getElementById("dbSelection").value;
+    const query = document.getElementById("queryInput").value;
+    try {
+      const response = await axios.post("/batch-task", new URLSearchParams({ selected_db: dbSelection, query: query }));
+      //alert(`배치 작업이 시작되었습니다. Batch ID: ${response.data.batch_id}`);
+      document.getElementById("batchStatusResult").innerHTML = "배치 작업이 시작되었습니다. Batch ID:"+response.data.batch_id;
+      document.getElementById("batchId").value = response.data.batch_id
+      // 배치 ID 값을 쿠키에 저장
+      setCookie("batchId", response.data.batch_id, 30);
+      startStatusMonitor(response.data.batch_id);
+    } catch (error) {
+      alert("배치 작업 시작 오류가 발생했습니다.");
+    }
+  }
+
+  function stopStatusMonitor(batchId) {
+    let batchIdLocal = batchId; // 로컬 변수로 batchId를 할당
+
+    batchIdLocal = document.getElementById("batchId").value = "";
+    clearInterval(monitorInterval);
+    deleteCookie("batchId")
+  }
+
+  function startStatusMonitor(batchId) {
+    let batchIdLocal = batchId; // 로컬 변수로 batchId를 할당
+
+    if (document.getElementById("batchId").value) {
+      batchIdLocal = document.getElementById("batchId").value;
+    }
+
+    if (monitorInterval) clearInterval(monitorInterval);
+
+    monitorInterval = setInterval(() => checkBatchStatus(batchIdLocal), 5000); // 5초마다 상태 확인
+  }
+
+  // 배치 상태 확인 함수
+  async function checkBatchStatus(batchId) {
+      //document.getElementById("errorLogContent").innerHTML = isMonitor
+      try {
+        const response = await axios.get(`/batch-status/${batchId}`);
+        document.getElementById("batchLog").innerHTML = JSON.stringify(response.data);
+        console.log(response.data)
+        const { total_rows, processed_rows, status, error_log_path,start_time,  last_update_ts} = response.data;
+
+
+        document.getElementById("batchStatusResult").innerHTML = `
+                    <span class="me-2">Total: ${total_rows}</span>
+                    <span class="me-2">Processed: ${processed_rows}</span>
+                    <span class="me-2">Status: ${status}</span>
+                `;
+
+        //progressBar setting
+        percentage = processed_rows / total_rows * 100
+        var progressBar = document.getElementById('progressbar');
+        progressBar.style.width = percentage + '%';
+        progressBar.setAttribute('aria-valuenow', percentage);
+
+        const batchResultsTable = document.getElementById("batchResultsTable");
+        //batchResultsTable.innerHTML = "";
+        const row = document.createElement("tr");
+        row.innerHTML += `<td>${start_time}</td><td>${last_update_ts}</td><td>${status}</td><td>${total_rows}</td><td>${processed_rows}</td>`;
+        batchResultsTable.appendChild(row);
+        isMonitor = true;
+        //완료되면 모니터링 멈추기
+        if (processed_rows == total_rows)
+            stopStatusMonitor(batchId)
+
+
+        if (status === "failed" && error_log_path) {
+          document.getElementById("errorLogPath").innerHTML = `오류 로그 경로: <a href="#" onclick="showErrorLog()">로그 보기</a>`;
+          clearInterval(monitorInterval);  // 오류 발생 시 모니터링 중지
+        }
+      } catch (error) {
+        console.error("Error fetching batch status:", error);
+        document.getElementById("batchStatusResult").innerHTML = "상태 조회 오류";
+        clearInterval(monitorInterval);  // 오류 발생 시 모니터링 중지
+      }
+  }
+
+  // 오류 로그 파일을 읽어오는 함수
+  async function showErrorLog() {
+    try {
+      const response = await axios.get("/error-log");
+      const logs = response.data.logs;
+      const logTable = `<table class="table table-bordered mt-3"><thead><tr><th>오류 로그</th></tr></thead><tbody>`;
+      const logRows = logs.map(log => `<tr><td>${log}</td></tr>`).join("");
+      document.getElementById("errorLogContent").innerHTML = logTable + logRows + "</tbody></table>";
+    } catch (error) {
+      console.error("Error reading error log:", error);
+      document.getElementById("errorLogContent").innerHTML = "오류 로그 파일을 불러오는 데 실패했습니다.";
+    }
+  }
+
+  // 쿠키에서 값을 읽어 오는 함수
+  function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+  }
+
+  // 쿠키에 값을 저장하는 함수
+  function setCookie(name, value, days) {
+    const d = new Date();
+    d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+    const expires = `expires=${d.toUTCString()}`;
+    document.cookie = `${name}=${value}; ${expires}; path=/`;
+  }
+
+  function deleteCookie(name) {
+    // 현재 날짜를 UTC 시간으로 변환하여 이미 만료된 상태로 설정합니다.
+    document.cookie = `${name}=; expires=Thu, 01 1970 00:00:00 UTC; path=/`;
+  }
+
+  // 페이지 로드 시 쿠키에서 Batch ID 값을 읽어와 설정하는 함수
+  function loadBatchIdFromCookie() {
+    const batchId = getCookie("batchId");
+    if (batchId) {
+      document.getElementById("batchId").value = batchId;
+      startStatusMonitor(batchId);
+    }
+  }
+
+</script>
+</body>
+</html>
