@@ -8,6 +8,7 @@ docker run -d \
   mysql:5.7
 
 
+1. MySQL
 
 CREATE TABLE IF NOT EXISTS migration_results (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -18,8 +19,18 @@ CREATE TABLE IF NOT EXISTS migration_results (
     last_update_ts DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
----oracle-------
 
+2. PostgreSQL
+CREATE TABLE IF NOT EXISTS migration_results (
+    id SERIAL PRIMARY KEY,
+    damo VARCHAR(1000),
+    crytohub VARCHAR(1000),
+    rsltCd VARCHAR(50),             -- 변환 결과 코드
+    rsltMsg VARCHAR(255),           -- 변환 결과 메시지
+    last_update_ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+3.Oracle
 -- 시퀀스 생성
 CREATE SEQUENCE migration_results_seq
 START WITH 1
@@ -46,6 +57,7 @@ BEGIN
     END IF;
 END;
 /
+
 
 
 
