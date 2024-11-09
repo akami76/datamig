@@ -259,16 +259,17 @@ async def process_batch(selected_db, query, batch_id, total_rows):
 
     try:
         while processed_rows < total_rows:
-            # 세션을 루프 내에서 명확히 열어 처리
             session = DBConnectionManager.get_session(selected_db)
 
             # ID 기반 페이징 쿼리 구성
             if db_type == "oracle":
                 paginated_query = f"""
                 SELECT * FROM (
-                    {query}
-                ) WHERE ROWNUM > {last_processed_id} AND ROWNUM <= {last_processed_id + batch_size}
-                ORDER BY id
+                    SELECT inner_query.*, ROWNUM rnum FROM (
+                        {query} ORDER BY id
+                    ) inner_query WHERE ROWNUM <= {last_processed_id + batch_size}
+                )
+                WHERE rnum > {last_processed_id}
                 """
             else:
                 paginated_query = f"""
@@ -285,7 +286,12 @@ async def process_batch(selected_db, query, batch_id, total_rows):
                 if not result:
                     break  # 데이터가 더 이상 없으면 루프 종료
 
-                data_batch = [row[0] for row in result]
+                # 각 행을 딕셔너리로 변환하고, 키를 소문자로 변환
+                formatted_result = [{k.lower(): v for k, v in row.items()} for row in result]
+
+                # 컬럼 이름 대소문자 무시, 'damo' 컬럼 가져오기
+                data_batch = [row['damo'] for row in formatted_result]
+
                 response = await convert_sample(RequestModel(instId="data-mig-server", ScpDbAgentApiVo=data_batch))
                 results = response["ScpDbAgentApiVo"]
 
@@ -295,7 +301,7 @@ async def process_batch(selected_db, query, batch_id, total_rows):
                     WHERE damo = :inStr
                 """)
 
-                for i, row in enumerate(result):
+                for i, row in enumerate(formatted_result):
                     result_data = results[i]
                     session.execute(
                         update_query,
@@ -303,15 +309,14 @@ async def process_batch(selected_db, query, batch_id, total_rows):
                             "outStr": result_data.get("outStr"),
                             "rsltCd": result_data.get("rsltCd"),
                             "rsltMsg": result_data.get("rsltMsg"),
-                            "inStr": result_data.get("inStr")
+                            "inStr": row['damo']
                         }
                     )
 
                 session.commit()
-                last_processed_id = result[-1][0]  # 마지막 처리된 ID 갱신
+                last_processed_id = formatted_result[-1]['id']  # 마지막 처리된 ID 갱신
                 processed_rows += len(result)
 
-                # 로그 및 상태 업데이트
                 update_batch_status(batch_id, processed_rows, total_rows)
                 batch_storage.log(batch_id, f"Processed {processed_rows}/{total_rows} rows")
                 print(f"Batch {batch_id} - Processed {processed_rows}/{total_rows} rows")
